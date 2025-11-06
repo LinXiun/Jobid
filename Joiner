@@ -1,0 +1,165 @@
+-- Services
+local Players = game:GetService("Players")
+local TeleportService = game:GetService("TeleportService")
+local player = Players.LocalPlayer
+local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService") -- For clipboard copy
+
+-- GUI Setup
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "ServerTransferGui"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 250, 0, 180)
+frame.Position = UDim2.new(0.5, -125, 0.5, -90)
+frame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+frame.BackgroundTransparency = 0.6 -- semi-transparent
+frame.BorderSizePixel = 0
+frame.Parent = screenGui
+frame.ClipsDescendants = true
+
+-- Rounded corners
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 20)
+corner.Parent = frame
+
+-- Make frame draggable
+local dragging = false
+local dragInput, mousePos, framePos
+
+local function update(input)
+    local delta = input.Position - mousePos
+    frame.Position = UDim2.new(framePos.X.Scale, framePos.X.Offset + delta.X, framePos.Y.Scale, framePos.Y.Offset + delta.Y)
+end
+
+frame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        mousePos = input.Position
+        framePos = frame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+frame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        update(input)
+    end
+end)
+
+-- Title
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 30)
+title.Position = UDim2.new(0, 0, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "Server Transfer"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 18
+title.Parent = frame
+
+-- Current server JobId display
+local currentJobLabel = Instance.new("TextLabel")
+currentJobLabel.Size = UDim2.new(0.8, -40, 0, 25)
+currentJobLabel.Position = UDim2.new(0.1, 0, 0.2, 0)
+currentJobLabel.BackgroundTransparency = 0.3
+currentJobLabel.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+currentJobLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+currentJobLabel.Font = Enum.Font.Gotham
+currentJobLabel.TextSize = 14
+currentJobLabel.Text = "Current JobId: " .. game.JobId
+currentJobLabel.BorderSizePixel = 0
+
+local labelCorner = Instance.new("UICorner")
+labelCorner.CornerRadius = UDim.new(0, 10)
+labelCorner.Parent = currentJobLabel
+currentJobLabel.Parent = frame
+
+-- Copy JobId Button
+local copyButton = Instance.new("TextButton")
+copyButton.Size = UDim2.new(0, 30, 0, 25)
+copyButton.Position = UDim2.new(0.82, 0, 0.2, 0)
+copyButton.BackgroundColor3 = Color3.fromRGB(100, 100, 255)
+copyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+copyButton.Font = Enum.Font.GothamBold
+copyButton.TextSize = 14
+copyButton.Text = "C"
+
+local copyCorner = Instance.new("UICorner")
+copyCorner.CornerRadius = UDim.new(0, 8)
+copyCorner.Parent = copyButton
+copyButton.Parent = frame
+
+copyButton.MouseButton1Click:Connect(function()
+    -- Copy current JobId to clipboard
+    local success, message = pcall(function()
+        setclipboard(game.JobId)
+    end)
+    if success then
+        copyButton.Text = "✓"
+        wait(1)
+        copyButton.Text = "C"
+    else
+        warn("Failed to copy JobId: ", message)
+    end
+end)
+
+-- JobId input
+local jobIdBox = Instance.new("TextBox")
+jobIdBox.Size = UDim2.new(0.8, 0, 0, 30)
+jobIdBox.Position = UDim2.new(0.1, 0, 0.45, 0)
+jobIdBox.PlaceholderText = "Enter JobId"
+jobIdBox.Text = ""
+jobIdBox.ClearTextOnFocus = false
+jobIdBox.BackgroundTransparency = 0.3
+jobIdBox.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+jobIdBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+jobIdBox.BorderSizePixel = 0
+
+-- Rounded corners for textbox
+local textBoxCorner = Instance.new("UICorner")
+textBoxCorner.CornerRadius = UDim.new(0, 15)
+textBoxCorner.Parent = jobIdBox
+
+jobIdBox.Parent = frame
+
+-- Transfer Button
+local transferButton = Instance.new("TextButton")
+transferButton.Size = UDim2.new(0.6, 0, 0, 40)
+transferButton.Position = UDim2.new(0.2, 0, 0.7, 0)
+transferButton.Text = "Transfer"
+transferButton.BackgroundColor3 = Color3.fromRGB(100, 100, 255)
+transferButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+transferButton.Font = Enum.Font.GothamBold
+transferButton.TextSize = 16
+transferButton.BorderSizePixel = 0
+
+-- Rounded corners for button
+local buttonCorner = Instance.new("UICorner")
+buttonCorner.CornerRadius = UDim.new(0, 15)
+buttonCorner.Parent = transferButton
+
+transferButton.Parent = frame
+
+-- Button functionality
+transferButton.MouseButton1Click:Connect(function()
+    local jobId = jobIdBox.Text
+    if jobId and jobId ~= "" then
+        local placeId = game.PlaceId
+        TeleportService:TeleportToPlaceInstance(placeId, jobId, player)
+    else
+        warn("Please enter a valid JobId!")
+    end
+end)
