@@ -1,165 +1,165 @@
--- LocalScript (put in StarterGui)
-local HttpService = game:GetService("HttpService")
+-- Services
 local Players = game:GetService("Players")
+local TeleportService = game:GetService("TeleportService")
 local player = Players.LocalPlayer
+local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService") -- For clipboard copy
 
--- Configuration
-local placeId = tostring(game.PlaceId) -- uses the current place ID; for universes you'd use the universe id if desired
-local limitPerPage = 100 -- API allows up to 100
-local baseUrl = ("https://games.roblox.com/v1/games/%s/servers/Public"):format(placeId)
+-- GUI Setup
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "ServerTransferGui"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = player:WaitForChild("PlayerGui")
 
--- Utility: safe get async with pcall
-local function safeGet(url)
-    local ok, res = pcall(HttpService.GetAsync, HttpService, url, true)
-    if not ok then
-        return false, res
-    end
-    local decodeOk, data = pcall(HttpService.JSONDecode, HttpService, res)
-    if not decodeOk then
-        return false, data
-    end
-    return true, data
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 250, 0, 180)
+frame.Position = UDim2.new(0.5, -125, 0.5, -90)
+frame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+frame.BackgroundTransparency = 0.6 -- semi-transparent
+frame.BorderSizePixel = 0
+frame.Parent = screenGui
+frame.ClipsDescendants = true
+
+-- Rounded corners
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 20)
+corner.Parent = frame
+
+-- Make frame draggable
+local dragging = false
+local dragInput, mousePos, framePos
+
+local function update(input)
+    local delta = input.Position - mousePos
+    frame.Position = UDim2.new(framePos.X.Scale, framePos.X.Offset + delta.X, framePos.Y.Scale, framePos.Y.Offset + delta.Y)
 end
 
--- Fetch all pages and collect job ids
-local function fetchAllJobIds()
-    local jobIds = {}
-    local cursor = nil
-    while true do
-        local url = baseUrl .. ("?limit=%d&sortOrder=Asc"):format(limitPerPage)
-        if cursor and cursor ~= "" then
-            url = url .. "&cursor=" .. HttpService:UrlEncode(tostring(cursor))
-        end
-
-        local ok, data = safeGet(url)
-        if not ok then
-            warn("Failed to fetch servers: ", data)
-            break
-        end
-
-        if data and data.data and #data.data > 0 then
-            for _, server in ipairs(data.data) do
-                if server.id then
-                    table.insert(jobIds, server.id)
-                end
-            end
-        end
-
-        -- pagination cursor (may be nil or empty when no more pages)
-        cursor = data.nextPageCursor
-        if not cursor or cursor == "" then
-            break
-        end
-
-        -- tiny wait to be a bit nicer to the API (adjust as needed)
-        task.wait(0.2)
-    end
-
-    return jobIds
-end
-
--- Build a simple GUI to show the job ids
-local function showGui(jobIds)
-    -- cleanup any old GUI by name
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "ServerJobIdLister"
-    screenGui.ResetOnSpawn = false
-    screenGui.Parent = player:WaitForChild("PlayerGui")
-
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 420, 0, 360)
-    frame.Position = UDim2.new(0.5, -210, 0.5, -180)
-    frame.AnchorPoint = Vector2.new(0.5, 0.5)
-    frame.BackgroundTransparency = 0.15
-    frame.Parent = screenGui
-
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 36)
-    title.BackgroundTransparency = 1
-    title.Text = "Server Job IDs (" .. tostring(#jobIds) .. ")"
-    title.Font = Enum.Font.SourceSansBold
-    title.TextSize = 18
-    title.Parent = frame
-
-    local closeBtn = Instance.new("TextButton")
-    closeBtn.Size = UDim2.new(0, 28, 0, 28)
-    closeBtn.Position = UDim2.new(1, -34, 0, 4)
-    closeBtn.Text = "X"
-    closeBtn.Parent = frame
-    closeBtn.MouseButton1Click:Connect(function()
-        screenGui:Destroy()
-    end)
-
-    local scroll = Instance.new("ScrollingFrame")
-    scroll.Size = UDim2.new(1, -12, 1, -56)
-    scroll.Position = UDim2.new(0, 6, 0, 42)
-    scroll.CanvasSize = UDim2.new(0, 0, 0, math.max(1, #jobIds) * 34)
-    scroll.Parent = frame
-    scroll.BorderSizePixel = 0
-    scroll.ScrollBarThickness = 6
-
-    local layout = Instance.new("UIListLayout")
-    layout.Padding = UDim.new(0, 6)
-    layout.Parent = scroll
-    layout.SortOrder = Enum.SortOrder.LayoutOrder
-
-    for i, id in ipairs(jobIds) do
-        local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(1, -10, 0, 28)
-        btn.Position = UDim2.new(0, 5, 0, (i-1)*34)
-        btn.Text = id
-        btn.Font = Enum.Font.SourceSans
-        btn.TextSize = 16
-        btn.Parent = scroll
-
-        btn.MouseButton1Click:Connect(function()
-            print("Clicked jobId:", id)
-            -- attempt to copy to clipboard if environment supports setclipboard
-            local success, err = pcall(function()
-                if setclipboard then
-                    setclipboard(tostring(id))
-                else
-                    error("setclipboard not available in this environment")
-                end
-            end)
-            if success then
-                -- give a quick visible feedback (temporary text change)
-                local old = btn.Text
-                btn.Text = "Copied ✓"
-                task.delay(0.9, function()
-                    if btn and btn.Parent then btn.Text = old end
-                end)
-            else
-                -- fallback: print message (clipboard not available)
-                warn("Could not copy to clipboard: ", err)
+frame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        mousePos = input.Position
+        framePos = frame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
             end
         end)
     end
-end
+end)
 
--- Main
-spawn(function()
-    -- quick check for HttpService enabled
-    local success, test = pcall(function()
-        -- try a quick request to a small endpoint to see if HTTP is allowed (we use the same endpoint with limit=1)
-        local url = baseUrl .. "?limit=1"
-        local ok, data = safeGet(url)
-        if not ok then
-            error(data)
-        end
-        return true
-    end)
-
-    if not success then
-        warn("HTTP requests appear disabled or failed. Enable HTTP Requests in Game Settings. Error: ", test)
-        return
+frame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
+        dragInput = input
     end
+end)
 
-    local jobIds = fetchAllJobIds()
-    print("Found " .. tostring(#jobIds) .. " public server job IDs.")
-    if #jobIds == 0 then
-        warn("No public servers found (or API returned none).")
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        update(input)
+    end
+end)
+
+-- Title
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 30)
+title.Position = UDim2.new(0, 0, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "Server Transfer"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 18
+title.Parent = frame
+
+-- Current server JobId display
+local currentJobLabel = Instance.new("TextLabel")
+currentJobLabel.Size = UDim2.new(0.8, -40, 0, 25)
+currentJobLabel.Position = UDim2.new(0.1, 0, 0.2, 0)
+currentJobLabel.BackgroundTransparency = 0.3
+currentJobLabel.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+currentJobLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+currentJobLabel.Font = Enum.Font.Gotham
+currentJobLabel.TextSize = 14
+currentJobLabel.Text = "Current JobId: " .. game.JobId
+currentJobLabel.BorderSizePixel = 0
+
+local labelCorner = Instance.new("UICorner")
+labelCorner.CornerRadius = UDim.new(0, 10)
+labelCorner.Parent = currentJobLabel
+currentJobLabel.Parent = frame
+
+-- Copy JobId Button
+local copyButton = Instance.new("TextButton")
+copyButton.Size = UDim2.new(0, 30, 0, 25)
+copyButton.Position = UDim2.new(0.82, 0, 0.2, 0)
+copyButton.BackgroundColor3 = Color3.fromRGB(100, 100, 255)
+copyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+copyButton.Font = Enum.Font.GothamBold
+copyButton.TextSize = 14
+copyButton.Text = "C"
+
+local copyCorner = Instance.new("UICorner")
+copyCorner.CornerRadius = UDim.new(0, 8)
+copyCorner.Parent = copyButton
+copyButton.Parent = frame
+
+copyButton.MouseButton1Click:Connect(function()
+    -- Copy current JobId to clipboard
+    local success, message = pcall(function()
+        setclipboard(game.JobId)
+    end)
+    if success then
+        copyButton.Text = "✓"
+        wait(1)
+        copyButton.Text = "C"
     else
-        showGui(jobIds)
+        warn("Failed to copy JobId: ", message)
+    end
+end)
+
+-- JobId input
+local jobIdBox = Instance.new("TextBox")
+jobIdBox.Size = UDim2.new(0.8, 0, 0, 30)
+jobIdBox.Position = UDim2.new(0.1, 0, 0.45, 0)
+jobIdBox.PlaceholderText = "Enter JobId"
+jobIdBox.Text = ""
+jobIdBox.ClearTextOnFocus = false
+jobIdBox.BackgroundTransparency = 0.3
+jobIdBox.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+jobIdBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+jobIdBox.BorderSizePixel = 0
+
+-- Rounded corners for textbox
+local textBoxCorner = Instance.new("UICorner")
+textBoxCorner.CornerRadius = UDim.new(0, 15)
+textBoxCorner.Parent = jobIdBox
+
+jobIdBox.Parent = frame
+
+-- Transfer Button
+local transferButton = Instance.new("TextButton")
+transferButton.Size = UDim2.new(0.6, 0, 0, 40)
+transferButton.Position = UDim2.new(0.2, 0, 0.7, 0)
+transferButton.Text = "Transfer"
+transferButton.BackgroundColor3 = Color3.fromRGB(100, 100, 255)
+transferButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+transferButton.Font = Enum.Font.GothamBold
+transferButton.TextSize = 16
+transferButton.BorderSizePixel = 0
+
+-- Rounded corners for button
+local buttonCorner = Instance.new("UICorner")
+buttonCorner.CornerRadius = UDim.new(0, 15)
+buttonCorner.Parent = transferButton
+
+transferButton.Parent = frame
+
+-- Button functionality
+transferButton.MouseButton1Click:Connect(function()
+    local jobId = jobIdBox.Text
+    if jobId and jobId ~= "" then
+        local placeId = game.PlaceId
+        TeleportService:TeleportToPlaceInstance(placeId, jobId, player)
+    else
+        warn("Please enter a valid JobId!")
     end
 end)
